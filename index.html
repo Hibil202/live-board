@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="현황판">
+<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<title>현황판</title>
+<style>
+  :root { color-scheme: light dark; --bg:#fff; --fg:#1d1d1f; --sub:#6e6e73; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#111; --fg:#f5f5f7; --sub:#a1a1a6; } }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif; }
+  iframe { position:fixed; inset:0; width:100%; height:100%; border:0; display:none; }
+  #msg { position:fixed; inset:0; display:flex; flex-direction:column; align-items:center;
+    justify-content:center; text-align:center; padding:0 24px; }
+  #msg b { font-size:20px; margin-bottom:8px; }
+  #msg span { font-size:15px; color:var(--sub); line-height:1.5; }
+</style>
+</head>
+<body>
+<iframe id="frame" title="현황판" referrerpolicy="no-referrer"></iframe>
+<div id="msg"><b id="t">연결하는 중</b><span id="s">잠시만 기다려 주세요</span></div>
+<script>
+const SAFE = /^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/;   // 키를 이 주소 말고 다른 곳에 보내지 않는다
+const TICK = 15000;
+const frame = document.getElementById('frame'), msg = document.getElementById('msg');
+const key = new URLSearchParams(location.hash.slice(1)).get('k') || '';
+let shown = '', fails = 0, down = true, busy = false;
+
+function say(t, s) {
+  document.getElementById('t').textContent = t;
+  document.getElementById('s').textContent = s;
+  msg.style.display = 'flex';
+  frame.style.display = 'none';
+}
+
+async function latest() {
+  const r = await fetch('url.json?t=' + Date.now(), {cache:'no-store'});
+  const u = (await r.json()).url;
+  return SAFE.test(u) ? u : '';
+}
+
+async function alive(u) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 8000);
+  try {
+    const r = await fetch(u + '/api/status?k=' + encodeURIComponent(key), {cache:'no-store', signal:ctl.signal});
+    return r.ok;
+  } catch (e) {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function tick() {
+  if (busy) return;
+  busy = true;
+  try {
+    let u = '';
+    try { u = await latest(); } catch (e) { u = shown; }
+    if (u && await alive(u)) {
+      fails = 0;
+      if (u !== shown || down) { frame.src = u + '/?k=' + encodeURIComponent(key); shown = u; }
+      down = false;
+      msg.style.display = 'none';
+      frame.style.display = 'block';
+    } else if (++fails >= 2 || down) {
+      down = true;
+      say('맥이 잠들어 있어요', '맥이 깨어나면 1~3분 안에 자동으로 다시 연결됩니다');
+    }
+  } finally {
+    busy = false;
+  }
+}
+
+if (!key) {
+  say('키가 없는 주소예요', '처음 받은 전체 주소로 다시 열어 주세요');
+} else {
+  tick();
+  setInterval(tick, TICK);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
+}
+</script>
+</body>
+</html>
